@@ -1,121 +1,151 @@
-# 📬 Morning VC Newsletter Agent — Setup Guide
+#!/usr/bin/env python3
+"""
+Morning VC & Tech Newsletter Agent
+Runs daily at 8am PT, uses Claude with web search to compile
+personalized briefings on VC deals, AI, energy, and semiconductors.
+"""
 
-A Claude-powered agent that emails you a personalized morning briefing every day at 8am PT,
-covering VC deal activity, AI, energy, and semiconductors.
+import os
+import json
+import smtplib
+import anthropic
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from datetime import datetime
+import pytz
 
----
+# ── Config (set these as environment variables or GitHub Actions secrets) ──────
+ANTHROPIC_API_KEY = os.environ["ANTHROPIC_API_KEY"]
+SENDER_EMAIL      = os.environ["SENDER_EMAIL"]       # Gmail address you send FROM
+SENDER_PASSWORD   = os.environ["SENDER_PASSWORD"]    # Gmail App Password (not your login password)
+RECIPIENT_EMAIL   = os.environ["RECIPIENT_EMAIL"]    # Where to deliver the newsletter
 
-## How It Works
 
-1. **GitHub Actions** triggers at 8am PT every morning
-2. **`newsletter.py`** calls Claude (claude-sonnet-4) with the web search tool enabled
-3. Claude searches the web for today's news and writes a formatted briefing
-4. The script emails the HTML newsletter directly to your inbox
+# ── Claude web-search prompt ───────────────────────────────────────────────────
+SYSTEM_PROMPT = """You are a sharp, senior VC analyst writing a daily morning briefing
+for a venture capital investor. Your reader is time-constrained and sophisticated —
+they want signal, not noise.
 
----
+Tone: direct, insightful, no filler. Write like a trusted colleague, not a journalist.
+Format: clean HTML email (inline styles only, no external CSS).
 
-## Setup (15 minutes)
+Sections to cover (in order):
+1. 💰 VC Deal Activity — notable funding rounds, exits, and firm news from the last 24 hours.
+   Focus on: deal size, sector, lead investor, what it signals about the market.
+2. 🤖 AI — most important developments for a VC: new models, infra plays, enterprise adoption,
+   regulatory moves, and noteworthy research commercialization.
+3. ⚡ Energy — cleantech deals, grid infrastructure, nuclear/fusion milestones, policy shifts
+   that affect capital deployment.
+4. 🔬 Semiconductors — fab news, chip design startups, supply chain shifts, government
+   subsidies/CHIPS Act updates, and AI chip demand signals.
 
-### Step 1 — Create a GitHub repository
+For each item include:
+- A bolded 1-line headline
+- 2–3 sentences of context: what happened, why it matters to a VC, what to watch
+- Source name (no URLs needed)
 
-```bash
-git init morning-newsletter
-cd morning-newsletter
-# Copy newsletter.py here
-# Copy .github/workflows/newsletter.yml here (preserve folder structure)
-git add .
-git commit -m "Initial newsletter agent"
-git remote add origin https://github.com/YOUR_USERNAME/morning-newsletter.git
-git push -u origin main
-```
+End with a "So What?" section: 3 punchy bullet points on the single biggest cross-sector
+theme of the day and what it means for dealflow or portfolio companies.
 
-### Step 2 — Get a Gmail App Password
+Search for today's news before writing. Be specific — include company names, dollar amounts,
+and investor names wherever possible. Skip anything older than 48 hours."""
 
-You need an App Password (not your regular Gmail password) to send via SMTP:
+USER_PROMPT = f"""Today is {datetime.now(pytz.timezone('US/Pacific')).strftime('%A, %B %d, %Y')}.
 
-1. Go to your Google Account → **Security**
-2. Enable **2-Step Verification** if not already on
-3. Search for **"App passwords"** in the Security settings
-4. Create a new App Password → select **Mail** → **Other (custom name)**
-5. Name it "Newsletter Agent" → copy the 16-character password
+Search for the latest news and compile today's morning briefing covering:
+1. Significant VC deals and venture market activity
+2. AI industry headlines (from a VC investor perspective)
+3. Energy / cleantech headlines (from a VC investor perspective)
+4. Semiconductor industry headlines (from a VC investor perspective)
 
-### Step 3 — Add GitHub Secrets
+Write the full briefing as a well-formatted HTML email I can send directly.
+Use inline styles for formatting. Make it scannable with clear section headers."""
 
-In your GitHub repo → **Settings → Secrets and variables → Actions → New repository secret**
 
-Add these four secrets:
+# ── HTML email wrapper ─────────────────────────────────────────────────────────
+def wrap_in_email_template(content: str, date_str: str) -> str:
+    return f"""<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"></head>
+<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+             max-width: 680px; margin: 0 auto; padding: 24px;
+             background: #ffffff; color: #1a1a1a; line-height: 1.6;">
 
-| Secret Name        | Value                                      |
-|--------------------|--------------------------------------------|
-| `ANTHROPIC_API_KEY`| Your Anthropic API key (from console.anthropic.com) |
-| `SENDER_EMAIL`     | Your Gmail address (e.g. you@gmail.com)    |
-| `SENDER_PASSWORD`  | The 16-char App Password from Step 2       |
-| `RECIPIENT_EMAIL`  | Where to deliver the newsletter (can be same as sender) |
+  <div style="border-bottom: 3px solid #0f172a; padding-bottom: 16px; margin-bottom: 24px;">
+    <h1 style="margin: 0; font-size: 22px; color: #0f172a; letter-spacing: -0.5px;">
+      📬 Morning Briefing
+    </h1>
+    <p style="margin: 4px 0 0; font-size: 13px; color: #64748b;">{date_str}</p>
+  </div>
 
-### Step 4 — Test It
+  {content}
 
-In your GitHub repo → **Actions** tab → **Morning Newsletter** → **Run workflow**
+  <div style="border-top: 1px solid #e2e8f0; margin-top: 32px; padding-top: 16px;
+              font-size: 12px; color: #94a3b8; text-align: center;">
+    Generated by your Claude newsletter agent · {date_str}
+  </div>
 
-Check your inbox within ~60 seconds.
+</body>
+</html>"""
 
----
 
-## Timing Notes
+# ── Call Claude with web search ────────────────────────────────────────────────
+def generate_newsletter() -> str:
+    client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
 
-The cron schedule `0 15 * * *` = **15:00 UTC = 8:00 AM PDT (summer)**.
+    print("🔍 Calling Claude with web search...")
 
-In winter (PST, UTC-8), change it to `0 16 * * *` in the workflow file.
+    response = client.messages.create(
+        model="claude-sonnet-4-20250514",
+        max_tokens=4096,
+        system=SYSTEM_PROMPT,
+        tools=[{"type": "web_search_20250305", "name": "web_search"}],
+        messages=[{"role": "user", "content": USER_PROMPT}],
+    )
 
-Or use both to handle the transition:
-```yaml
-- cron: '0 15 * * *'   # 8am PDT (Mar–Nov)
-- cron: '0 16 * * *'   # 8am PST (Nov–Mar)
-```
-Note: this would send twice during transition weeks — simplest fix is to just pick one.
+    # Extract the final text response (Claude may use tool calls mid-stream)
+    newsletter_html = ""
+    for block in response.content:
+        if block.type == "text":
+            newsletter_html += block.text
 
----
+    if not newsletter_html.strip():
+        raise ValueError("Claude returned no text content")
 
-## Customization
+    print(f"✅ Newsletter generated ({len(newsletter_html)} chars)")
+    return newsletter_html
 
-### Change the topics or tone
-Edit `SYSTEM_PROMPT` in `newsletter.py`. For example:
-- Add **crypto/web3** as a 5th section
-- Change focus to **Series B+ only** deals
-- Add a **"Portfolio Watch"** section for specific companies
 
-### Add a personal context block
-At the top of `USER_PROMPT`, add something like:
-```python
-USER_PROMPT = f"""Context: I'm a GP at a seed-stage fund focused on AI infrastructure
-and climate tech. My portfolio includes [Company A], [Company B].
-...
-```
-This makes Claude flag relevant news to your specific portfolio/thesis.
+# ── Send via Gmail SMTP ────────────────────────────────────────────────────────
+def send_email(html_body: str, date_str: str):
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = f"📬 Morning Briefing — {date_str}"
+    msg["From"]    = SENDER_EMAIL
+    msg["To"]      = RECIPIENT_EMAIL
 
-### Use a different email provider
-Replace the Gmail SMTP block in `send_email()` with:
-- **Resend.com** (recommended, great free tier): `pip install resend`
-- **SendGrid**: `pip install sendgrid`
-- **Postmark**: `pip install postmarkclient`
+    full_html = wrap_in_email_template(html_body, date_str)
+    msg.attach(MIMEText(full_html, "html"))
 
----
+    print(f"📧 Sending to {RECIPIENT_EMAIL}...")
+    with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+        server.login(SENDER_EMAIL, SENDER_PASSWORD)
+        server.sendmail(SENDER_EMAIL, RECIPIENT_EMAIL, msg.as_string())
 
-## Cost Estimate
+    print("✅ Email sent!")
 
-- **Claude API**: ~$0.05–0.15 per newsletter (Sonnet 4 with web search)
-- **GitHub Actions**: Free (well within free tier minutes)
-- **Gmail SMTP**: Free
-- **Total**: ~$1.50–4.50/month
 
----
+# ── Main ───────────────────────────────────────────────────────────────────────
+def main():
+    pt = pytz.timezone("US/Pacific")
+    date_str = datetime.now(pt).strftime("%A, %B %d, %Y")
 
-## File Structure
+    print(f"\n🗞  Starting newsletter generation for {date_str}\n")
 
-```
-morning-newsletter/
-├── newsletter.py                    # Main agent script
-├── .github/
-│   └── workflows/
-│       └── newsletter.yml           # GitHub Actions schedule
-└── README.md                        # This file
-```
+    newsletter_html = generate_newsletter()
+    send_email(newsletter_html, date_str)
+
+    print("\n🎉 Done!\n")
+
+
+if __name__ == "__main__":
+    main()
