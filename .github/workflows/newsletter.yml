@@ -2,15 +2,17 @@ name: Morning Newsletter
 
 on:
   schedule:
-    # 8:00 AM PT = 16:00 UTC (15:00 UTC during PDT / summer)
-    # This runs at 15:00 UTC which covers PDT (UTC-7). 
-    # Adjust to 16:00 in winter (PST = UTC-8).
+    # 8:00 AM PT = 15:00 UTC (PDT, UTC-7). Change to 16:00 in winter (PST, UTC-8).
     - cron: '0 15 * * *'
-  workflow_dispatch:  # Allow manual trigger from GitHub UI for testing
+  workflow_dispatch:   # Allow manual trigger from GitHub UI for testing
 
 jobs:
   send-newsletter:
     runs-on: ubuntu-latest
+
+    # Allow the job to push watchlist.json back to the repo
+    permissions:
+      contents: write
 
     steps:
       - name: Checkout repo
@@ -22,12 +24,25 @@ jobs:
           python-version: '3.11'
 
       - name: Install dependencies
-        run: pip install anthropic pytz
+        run: pip install anthropic pytz requests
 
       - name: Run newsletter agent
         env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          SENDER_EMAIL:      ${{ secrets.SENDER_EMAIL }}
-          SENDER_PASSWORD:   ${{ secrets.SENDER_PASSWORD }}
-          RECIPIENT_EMAIL:   ${{ secrets.RECIPIENT_EMAIL }}
+          ANTHROPIC_API_KEY:        ${{ secrets.ANTHROPIC_API_KEY }}
+          SENDER_EMAIL:             ${{ secrets.SENDER_EMAIL }}
+          SENDER_PASSWORD:          ${{ secrets.SENDER_PASSWORD }}
+          RECIPIENT_EMAIL:          ${{ secrets.RECIPIENT_EMAIL }}
+          FEEDBACK_WEBHOOK_URL:     ${{ secrets.FEEDBACK_WEBHOOK_URL }}
+          GITHUB_TOKEN_NEWSLETTER:  ${{ secrets.GITHUB_TOKEN_NEWSLETTER }}
+          GITHUB_REPO:              ${{ github.repository }}
         run: python newsletter.py
+
+      - name: Commit updated watchlist
+        run: |
+          git config user.name  "Newsletter Bot"
+          git config user.email "newsletter-bot@users.noreply.github.com"
+          git add watchlist.json || true
+          git diff --staged --quiet || git commit -m "chore: update watchlist [skip ci]"
+          git push
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
