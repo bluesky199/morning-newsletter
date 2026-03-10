@@ -1,0 +1,33 @@
+name: Morning Newsletter
+
+on:
+  schedule:
+    # 8:00 AM PT = 16:00 UTC (15:00 UTC during PDT / summer)
+    # This runs at 15:00 UTC which covers PDT (UTC-7). 
+    # Adjust to 16:00 in winter (PST = UTC-8).
+    - cron: '0 15 * * *'
+  workflow_dispatch:  # Allow manual trigger from GitHub UI for testing
+
+jobs:
+  send-newsletter:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install anthropic pytz
+
+      - name: Run newsletter agent
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          SENDER_EMAIL:      ${{ secrets.SENDER_EMAIL }}
+          SENDER_PASSWORD:   ${{ secrets.SENDER_PASSWORD }}
+          RECIPIENT_EMAIL:   ${{ secrets.RECIPIENT_EMAIL }}
+        run: python newsletter.py
