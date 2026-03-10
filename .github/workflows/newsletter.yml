@@ -5,6 +5,8 @@ on:
     # 8:00 AM PT = 15:00 UTC (PDT, UTC-7). Change to 16:00 in winter (PST, UTC-8).
     - cron: '0 15 * * *'
   workflow_dispatch:   # Allow manual trigger from GitHub UI for testing
+  push:
+    branches: [main]
 
 jobs:
   send-newsletter:
