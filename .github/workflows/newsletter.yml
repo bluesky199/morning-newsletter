@@ -33,7 +33,7 @@ jobs:
           SENDER_PASSWORD:          ${{ secrets.SENDER_PASSWORD }}
           RECIPIENT_EMAIL:          ${{ secrets.RECIPIENT_EMAIL }}
           FEEDBACK_WEBHOOK_URL:     ${{ secrets.FEEDBACK_WEBHOOK_URL }}
-          GITHUB_TOKEN_NEWSLETTER:  ${{ secrets.GITHUB_TOKEN_NEWSLETTER }}
+          NEWSLETTER_GITHUB_TOKEN:  ${{ secrets.NEWSLETTER_GITHUB_TOKEN }}
           GITHUB_REPO:              ${{ github.repository }}
         run: python newsletter.py
 

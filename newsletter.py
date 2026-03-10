@@ -23,7 +23,7 @@ SENDER_EMAIL          = os.environ["SENDER_EMAIL"]
 SENDER_PASSWORD       = os.environ["SENDER_PASSWORD"]
 RECIPIENT_EMAIL       = os.environ["RECIPIENT_EMAIL"]
 FEEDBACK_WEBHOOK_URL  = os.environ.get("FEEDBACK_WEBHOOK_URL", "")
-GITHUB_TOKEN          = os.environ.get("GITHUB_TOKEN_NEWSLETTER", "")
+GITHUB_TOKEN          = os.environ.get("NEWSLETTER_GITHUB_TOKEN", "")
 GITHUB_REPO           = os.environ.get("GITHUB_REPO", "")   # set to github.repository in workflow
 
 WATCHLIST_FILE = "watchlist.json"
